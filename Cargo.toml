@@ -10,3 +10,4 @@ license = "MIT"
 [dependencies]
 actix-web = "1.0.5"
 serde = "1.0.98"
+futures = "0.1.28"
