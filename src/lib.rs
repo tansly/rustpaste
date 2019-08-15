@@ -75,3 +75,40 @@ fn send_paste(
         Err(_) => Ok(HttpResponse::NotFound().into()),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{test, http};
+    use std::fs::File;
+    use std::io::Write;
+
+    fn make_test_config() -> Config {
+        Config {
+            paste_dir: String::from("/tmp"), // XXX: Is this OK?
+            url_base: String::from("https://testurl"),
+        }
+    }
+
+    #[test]
+    fn get_paste_ok() {
+        // Make the app
+        let config = make_test_config();
+        let data = web::Data::new(config.clone());
+        let mut app = test::init_service(App::new()
+            .register_data(data)
+            .route("/{filename}", web::get().to_async(send_paste)));
+
+        // Write a test paste
+        let paste_name = "/testpaste";
+        let paste_content = b"plain text paste contents\nwith a newline";
+        let mut file = File::create(config.paste_dir + paste_name).unwrap();
+        file.write_all(paste_content).unwrap();
+
+        let req = test::TestRequest::get().uri(paste_name).to_request();
+        println!("{:?}", req);
+        let resp = test::call_service(&mut app, req);
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        // TODO: Check the request body
+    }
+}
