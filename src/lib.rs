@@ -1,8 +1,13 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{post, web, App, HttpResponse, HttpServer};
 use futures::Future;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use std::error::Error;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::iter;
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
@@ -45,19 +50,41 @@ struct Paste {
     pub data: String,
 }
 
+// TODO: Consider using multipart formdata instead of urlencoded.
+// XXX: This will hang in an infinite loop if the paste directory does not exist.
+// We'll probably make sure it exists while parsing config, not here.
 #[post("/")]
-fn new_paste(config: web::Data<Config>, paste: web::Form<Paste>) -> impl Responder {
-    // TODO: Generate the paste name randomly
-    // TODO: Consider using multipart formdata instead of urlencoded.
-    let paste_name = "pastename";
-    let file_path = format!("{}/{}", config.paste_dir, paste_name);
+fn new_paste(
+    config: web::Data<Config>,
+    paste: web::Form<Paste>,
+) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
+    web::block(move || {
+        let mut rng = thread_rng();
 
-    // TODO: Write to actual file
-    println!("{}", paste.data);
+        // Paste IDs (= paste file names) are 8 character alphanumeric strings.
+        // Here we generate a random ID that is not already in use,
+        // and create (and open) a paste file with that ID as its name.
+        let (mut file, paste_id) = loop {
+            let id: String = iter::repeat(())
+                .map(|()| rng.sample(Alphanumeric))
+                .take(8)
+                .collect();
+            let full_path = format!("{}/{}", config.paste_dir, id);
+            if let Ok(file) = OpenOptions::new().write(true).create(true).open(full_path) {
+                break (file, id);
+            }
+        };
 
-    HttpResponse::Ok()
-        .content_type("text/plain")
-        .body(format!("{}/{}", config.url_base, paste_name))
+        let paste_url = format!("{}/{}", config.url_base, paste_id);
+        file.write_all(paste.data.as_bytes())
+            .and_then(|()| Ok(paste_url))
+    })
+    .then(|res| match res {
+        Ok(paste_url) => Ok(HttpResponse::Ok()
+            .content_type("text/plain")
+            .body(paste_url)),
+        Err(_) => Ok(HttpResponse::InternalServerError().into()),
+    })
 }
 
 fn send_paste(

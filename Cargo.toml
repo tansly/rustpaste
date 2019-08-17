@@ -11,6 +11,7 @@ license = "MIT"
 actix-web = "1.0.5"
 serde = "1.0.98"
 futures = "0.1.28"
+rand = "0.7.0"
 
 [dev-dependencies]
 tempfile = "3.1.0"
