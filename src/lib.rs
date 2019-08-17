@@ -64,10 +64,8 @@ fn send_paste(
     config: web::Data<Config>,
     paste_name: web::Path<String>,
 ) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
-    // TODO: Put more thought onto error handling and returned status codes
     web::block(move || {
         let file_path = format!("{}/{}", config.paste_dir, paste_name);
-        // XXX: Is path traversal attack possible?
         fs::read_to_string(file_path)
     })
     .then(|res| match res {
@@ -85,14 +83,14 @@ mod tests {
 
     fn make_test_config() -> Config {
         Config {
-            paste_dir: String::from("/tmp"), // XXX: Is this OK?
+            // TODO: Use a temp directory for testing. Check out crate tempfile.
+            paste_dir: String::from("/tmp"),
             url_base: String::from("https://testurl"),
         }
     }
 
     #[test]
     fn get_paste_ok() {
-        // Make the app
         let config = make_test_config();
         let data = web::Data::new(config.clone());
         let mut app = test::init_service(App::new()
@@ -106,9 +104,23 @@ mod tests {
         file.write_all(paste_content).unwrap();
 
         let req = test::TestRequest::get().uri(paste_name).to_request();
-        println!("{:?}", req);
         let resp = test::call_service(&mut app, req);
+
         assert_eq!(resp.status(), http::StatusCode::OK);
-        // TODO: Check the request body
+    }
+
+    #[test]
+    fn get_paste_not_ok() {
+        let config = make_test_config();
+        let data = web::Data::new(config.clone());
+        let mut app = test::init_service(App::new()
+            .register_data(data)
+            .route("/{filename}", web::get().to_async(send_paste)));
+        let non_existent_paste = "/hebele";
+
+        let req = test::TestRequest::get().uri(non_existent_paste).to_request();
+        let resp = test::call_service(&mut app, req);
+
+        assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
     }
 }
