@@ -80,18 +80,20 @@ mod tests {
     use actix_web::{test, http};
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
-    fn make_test_config() -> Config {
+    fn make_test_config(paste_dir: &str) -> Config {
         Config {
-            // TODO: Use a temp directory for testing. Check out crate tempfile.
-            paste_dir: String::from("/tmp"),
+            paste_dir: String::from(paste_dir),
             url_base: String::from("https://testurl"),
         }
     }
 
     #[test]
     fn get_paste_ok() {
-        let config = make_test_config();
+        let test_dir = TempDir::new().unwrap();
+        let config = make_test_config(test_dir.path().to_str().unwrap());
+
         let data = web::Data::new(config.clone());
         let mut app = test::init_service(App::new()
             .register_data(data)
@@ -111,7 +113,8 @@ mod tests {
 
     #[test]
     fn get_paste_not_ok() {
-        let config = make_test_config();
+        let test_dir = TempDir::new().unwrap();
+        let config = make_test_config(test_dir.path().to_str().unwrap());
         let data = web::Data::new(config.clone());
         let mut app = test::init_service(App::new()
             .register_data(data)
