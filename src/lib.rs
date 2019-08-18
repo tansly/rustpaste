@@ -1,4 +1,4 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer};
 use futures::Future;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -16,7 +16,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         App::new()
             .register_data(config.clone())
             .service(new_paste)
-            .route("/{filename}", web::get().to_async(send_paste))
+            .service(send_paste)
     })
     .bind("127.0.0.1:8080")
     .unwrap()
@@ -87,6 +87,7 @@ fn new_paste(
     })
 }
 
+#[get("/{filename}")]
 fn send_paste(
     config: web::Data<Config>,
     paste_name: web::Path<String>,
@@ -125,7 +126,7 @@ mod tests {
         let data = web::Data::new(config.clone());
         let mut app = test::init_service(App::new()
             .register_data(data)
-            .route("/{filename}", web::get().to_async(send_paste)));
+            .service(send_paste));
 
         // Write a test paste
         let paste_name = "/testpaste";
@@ -150,7 +151,7 @@ mod tests {
         let data = web::Data::new(config.clone());
         let mut app = test::init_service(App::new()
             .register_data(data)
-            .route("/{filename}", web::get().to_async(send_paste)));
+            .service(send_paste));
         let non_existent_paste = "/hebele";
 
         let req = test::TestRequest::get().uri(non_existent_paste).to_request();
