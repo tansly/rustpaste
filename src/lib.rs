@@ -105,11 +105,11 @@ fn send_paste(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, http};
+    use actix_web::{http, test};
     use std::fs::File;
     use std::io::Write;
-    use tempfile::TempDir;
     use std::str;
+    use tempfile::TempDir;
 
     fn make_test_config(paste_dir: &str) -> Config {
         Config {
@@ -124,9 +124,7 @@ mod tests {
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
         let data = web::Data::new(config.clone());
-        let mut app = test::init_service(App::new()
-            .register_data(data)
-            .service(send_paste));
+        let mut app = test::init_service(App::new().register_data(data).service(send_paste));
 
         // Write a test paste
         let paste_name = "/testpaste";
@@ -149,12 +147,12 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
         let data = web::Data::new(config.clone());
-        let mut app = test::init_service(App::new()
-            .register_data(data)
-            .service(send_paste));
+        let mut app = test::init_service(App::new().register_data(data).service(send_paste));
         let non_existent_paste = "/hebele";
 
-        let req = test::TestRequest::get().uri(non_existent_paste).to_request();
+        let req = test::TestRequest::get()
+            .uri(non_existent_paste)
+            .to_request();
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
@@ -166,16 +164,13 @@ mod tests {
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
         let data = web::Data::new(config.clone());
-        let mut app = test::init_service(
-            App::new()
-                .register_data(data)
-                .service(new_paste),
-        );
+        let mut app = test::init_service(App::new().register_data(data).service(new_paste));
 
         // XXX: This is not urlencoded, but it seems to work. Why?
         let paste_content = "hebele hubele\nbubele mubele\n";
 
-        let req = test::TestRequest::post().header("content-type", "application/x-www-form-urlencoded")
+        let req = test::TestRequest::post()
+            .header("content-type", "application/x-www-form-urlencoded")
             .set_payload(format!("data={}", paste_content))
             .to_request();
         let resp = test::call_service(&mut app, req);
