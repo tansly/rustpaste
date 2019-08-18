@@ -171,7 +171,9 @@ mod tests {
                 .service(new_paste),
         );
 
+        // XXX: This is not urlencoded, but it seems to work. Why?
         let paste_content = "hebele hubele\nbubele mubele\n";
+
         let req = test::TestRequest::post().header("content-type", "application/x-www-form-urlencoded")
             .set_payload(format!("data={}", paste_content))
             .to_request();
