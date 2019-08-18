@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn get_paste_ok() {
+    fn get_paste_short_text() {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn get_paste_not_ok() {
+    fn get_paste_nonexistent() {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
         let data = web::Data::new(config.clone());
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn post_paste_short_ascii() {
+    fn post_paste_short_text() {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
