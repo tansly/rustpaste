@@ -137,6 +137,10 @@ mod tests {
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+
+        let resp_body = test::read_body(resp);
+        assert_eq!(paste_content[..], resp_body);
     }
 
     #[test]
