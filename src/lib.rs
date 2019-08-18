@@ -90,10 +90,10 @@ fn new_paste(
 #[get("/{filename}")]
 fn send_paste(
     config: web::Data<Config>,
-    paste_name: web::Path<String>,
+    paste_id: web::Path<String>,
 ) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
     web::block(move || {
-        let file_path = format!("{}/{}", config.paste_dir, paste_name);
+        let file_path = format!("{}/{}", config.paste_dir, paste_id);
         fs::read_to_string(file_path)
     })
     .then(|res| match res {
@@ -127,12 +127,12 @@ mod tests {
         let mut app = test::init_service(App::new().register_data(data).service(send_paste));
 
         // Write a test paste
-        let paste_name = "/testpaste";
+        let paste_id = "/testpaste";
         let paste_content = b"plain text paste contents\nwith a newline";
-        let mut file = File::create(config.paste_dir + paste_name).unwrap();
+        let mut file = File::create(config.paste_dir + paste_id).unwrap();
         file.write_all(paste_content).unwrap();
 
-        let req = test::TestRequest::get().uri(paste_name).to_request();
+        let req = test::TestRequest::get().uri(paste_id).to_request();
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::OK);
