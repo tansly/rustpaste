@@ -76,8 +76,7 @@ fn new_paste(
         };
 
         let paste_url = format!("{}/{}", config.url_base, paste_id);
-        file.write_all(paste.data.as_bytes())
-            .and_then(|()| Ok(paste_url))
+        file.write_all(paste.data.as_bytes()).and(Ok(paste_url))
     })
     .then(|res| match res {
         Ok(paste_url) => Ok(HttpResponse::Ok()
