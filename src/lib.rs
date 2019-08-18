@@ -108,6 +108,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
+    use std::str;
 
     fn make_test_config(paste_dir: &str) -> Config {
         Config {
@@ -152,5 +153,36 @@ mod tests {
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn post_paste_short_ascii() {
+        let test_dir = TempDir::new().unwrap();
+        let config = make_test_config(test_dir.path().to_str().unwrap());
+
+        let data = web::Data::new(config.clone());
+        let mut app = test::init_service(
+            App::new()
+                .register_data(data)
+                .service(new_paste),
+        );
+
+        let paste_content = "hebele hubele\nbubele mubele\n";
+        let req = test::TestRequest::post().header("content-type", "application/x-www-form-urlencoded")
+            .set_payload(format!("data={}", paste_content))
+            .to_request();
+        let resp = test::call_service(&mut app, req);
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+
+        let resp_body = test::read_body(resp);
+        let paste_url = str::from_utf8(&resp_body).unwrap();
+        assert!(paste_url.starts_with(&config.url_base));
+
+        let (_, paste_id) = paste_url.split_at(config.url_base.len());
+        // Line above gets the paste id with a preceding slash, which is required for the next line to work.
+        let file_content = fs::read_to_string(config.paste_dir + paste_id).unwrap();
+        assert_eq!(paste_content, file_content);
     }
 }
