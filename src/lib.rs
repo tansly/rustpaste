@@ -124,11 +124,11 @@ fn authenticate(
 mod tests {
     use super::*;
     use actix_web::{http, test};
+    use base64;
     use std::fs::File;
     use std::io::Write;
     use std::str;
     use tempfile::TempDir;
-    use base64;
 
     fn make_test_config(paste_dir: &str) -> Config {
         Config {
@@ -234,5 +234,29 @@ mod tests {
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::OK);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_creds() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + ":" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
     }
 }
