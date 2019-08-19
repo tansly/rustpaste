@@ -128,6 +128,7 @@ mod tests {
     use std::io::Write;
     use std::str;
     use tempfile::TempDir;
+    use base64;
 
     fn make_test_config(paste_dir: &str) -> Config {
         Config {
@@ -210,5 +211,28 @@ mod tests {
         // Line above gets the paste id with a preceding slash, which is required for the next line to work.
         let file_content = fs::read_to_string(config.paste_dir + paste_id).unwrap();
         assert_eq!(paste_content, file_content);
+    }
+
+    #[test]
+    fn auth_valid_creds() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + ":" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        let resp = test::call_service(&mut app, req);
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
     }
 }
