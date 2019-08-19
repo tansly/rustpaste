@@ -1,6 +1,7 @@
 # rustpaste
 
 [![Build Status](https://travis-ci.com/tansly/rustpaste.svg?token=37nt8ydfT1ey69USyytm&branch=master)](https://travis-ci.com/tansly/rustpaste)
+[![codecov](https://codecov.io/gh/tansly/rustpaste/branch/master/graph/badge.svg)](https://codecov.io/gh/tansly/rustpaste)
 
 A private pastebin server written in Rust, using actix-web framework. Aiming to be very simple.
 
