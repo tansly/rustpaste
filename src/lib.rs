@@ -86,7 +86,7 @@ fn new_paste(
     })
 }
 
-#[get("/{filename}")]
+#[get("/{paste_id}")]
 fn send_paste(
     config: web::Data<Config>,
     paste_id: web::Path<String>,
