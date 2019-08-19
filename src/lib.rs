@@ -1,5 +1,8 @@
+use actix_web::dev::ServiceRequest;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
-use futures::Future;
+use actix_web_httpauth::extractors::basic::BasicAuth;
+use actix_web_httpauth::middleware::HttpAuthentication;
+use futures::{future, Future};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
@@ -13,9 +16,14 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
 
     HttpServer::new(move || {
+        let basic_auth = HttpAuthentication::basic(authenticate);
         App::new()
             .register_data(config.clone())
-            .service(web::resource("/").route(web::post().to_async(new_paste)))
+            .service(
+                web::resource("/")
+                    .route(web::post().to_async(new_paste))
+                    .wrap(basic_auth),
+            )
             .service(send_paste)
     })
     .bind("127.0.0.1:8080")
@@ -29,7 +37,8 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 pub struct Config {
     pub paste_dir: String,
     pub url_base: String,
-    // TODO: Fields for HTTP auth (user/pass)
+    pub username: String,
+    pub password: String,
 }
 
 impl Config {
@@ -38,9 +47,13 @@ impl Config {
         // TODO: Parse command line arguments
         let paste_dir = String::from("./pastes");
         let url_base = String::from("https://localhost");
+        let username = String::from("tansly");
+        let password = String::from("hebele");
         Ok(Config {
             paste_dir,
             url_base,
+            username,
+            password,
         })
     }
 }
@@ -100,6 +113,13 @@ fn send_paste(
     })
 }
 
+fn authenticate(
+    req: ServiceRequest,
+    _credentials: BasicAuth,
+) -> impl Future<Item = ServiceRequest, Error = actix_web::Error> {
+    future::ok(req)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +133,8 @@ mod tests {
         Config {
             paste_dir: String::from(paste_dir),
             url_base: String::from("https://testurl"),
+            username: String::from("tansly"),
+            password: String::from("hebele"),
         }
     }
 
