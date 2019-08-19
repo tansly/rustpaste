@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, App, HttpResponse, HttpServer};
+use actix_web::{get, web, App, HttpResponse, HttpServer};
 use futures::Future;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -15,7 +15,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     HttpServer::new(move || {
         App::new()
             .register_data(config.clone())
-            .service(new_paste)
+            .service(web::resource("/").route(web::post().to_async(new_paste)))
             .service(send_paste)
     })
     .bind("127.0.0.1:8080")
@@ -53,7 +53,6 @@ struct Paste {
 // TODO: Consider using multipart formdata instead of urlencoded.
 // XXX: This will hang in an infinite loop if the paste directory does not exist.
 // We'll probably make sure it exists while parsing config, not here.
-#[post("/")]
 fn new_paste(
     config: web::Data<Config>,
     paste: web::Form<Paste>,
@@ -163,7 +162,11 @@ mod tests {
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
         let data = web::Data::new(config.clone());
-        let mut app = test::init_service(App::new().register_data(data).service(new_paste));
+        let mut app = test::init_service(
+            App::new()
+                .register_data(data)
+                .route("/", web::post().to_async(new_paste)),
+        );
 
         // XXX: This is not urlencoded, but it seems to work. Why?
         let paste_content = "hebele hubele\nbubele mubele\n";
