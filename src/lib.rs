@@ -14,11 +14,16 @@ use std::iter;
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
+    // I may opt to the realm from the config file in the future.
+    let auth_config = web::Data::new(
+        actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
+    );
 
     HttpServer::new(move || {
         let basic_auth = HttpAuthentication::basic(authenticate);
         App::new()
             .register_data(config.clone())
+            .register_data(auth_config.clone())
             .service(
                 web::resource("/")
                     .route(web::post().to_async(new_paste))
@@ -115,9 +120,27 @@ fn send_paste(
 
 fn authenticate(
     req: ServiceRequest,
-    _credentials: BasicAuth,
+    credentials: BasicAuth,
 ) -> impl Future<Item = ServiceRequest, Error = actix_web::Error> {
-    future::ok(req)
+    use actix_web_httpauth::extractors;
+    // I wish I could chain these if let bindings.
+    // https://github.com/rust-lang/rust/issues/53667 :(
+    if let Some(config) = req.app_data::<Config>() {
+        if let Some(password) = credentials.password() {
+            let username = credentials.user_id();
+            // By the way, plaintext password :))))
+            if username == &config.username && password == &config.password {
+                return future::ok(req);
+            }
+        }
+    }
+    // Fail safe by erroring if app configuration could not be acquired.
+    let auth_config = req
+        .app_data::<extractors::basic::Config>()
+        .map_or_else(extractors::basic::Config::default, |data| {
+            data.get_ref().clone()
+        });
+    future::err(extractors::AuthenticationError::from(auth_config).into())
 }
 
 #[cfg(test)]
