@@ -135,14 +135,13 @@ fn send_highlighted_paste(
 
         let file_path = format!("{}/{}", config.paste_dir, paste_id);
         fs::read_to_string(file_path).and_then(|contents| {
-            // A simple match expression could have been more beautiful.
-            ss.find_syntax_by_extension(file_extension).map_or_else(
-                || Ok(contents.clone()),
-                |syntax| {
+            match ss.find_syntax_by_extension(file_extension) {
+                Some(syntax) => {
                     let highlighted = highlighted_html_for_string(&contents, &ss, syntax, theme);
                     Ok(body + &highlighted + "</body>")
-                },
-            )
+                }
+                None => Ok(contents),
+            }
         })
     })
     .then(|res| match res {
