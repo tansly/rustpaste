@@ -250,7 +250,7 @@ mod tests {
             ),
         );
 
-        let creds = config.username + ":" + &config.password;
+        let creds = config.username + ":wrong_password" + &config.password;
         let creds = base64::encode(&creds);
         let req = test::TestRequest::post()
             .header("Authorization", format!("Basic {}", creds))
