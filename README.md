@@ -12,7 +12,6 @@ API will be documented once things are relatively stable.
 After implementing a very basic API with `GET` and `POST` requests, I'm planning to add the following features.
 - [x] HTTP basic authentication for posting/deleting pastes.
 - [x] Syntax highlighting with [syntect](https://github.com/trishume/syntect).
-- [ ] HTTP basic authentication for posting/deleting pastes.
 - [ ] Configuration via a config file.
 - [ ] `DELETE` method to delete pastes.
 - [ ] Maybe, just maybe a frontend for this.
