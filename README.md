@@ -10,7 +10,7 @@ API will be documented once things are relatively stable.
 
 ## Planned features
 After implementing a very basic API with `GET` and `POST` requests, I'm planning to add the following features.
-- [ ] HTTP basic authentication for posting/deleting pastes.
+- [x] HTTP basic authentication for posting/deleting pastes.
 - [x] Syntax highlighting with [syntect](https://github.com/trishume/syntect).
 - [ ] Configuration via a config file.
 - [ ] `DELETE` method to delete pastes.

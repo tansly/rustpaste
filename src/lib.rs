@@ -1,5 +1,8 @@
-use actix_web::{get, post, web, App, HttpResponse, HttpServer};
-use futures::Future;
+use actix_web::dev::ServiceRequest;
+use actix_web::{get, web, App, HttpResponse, HttpServer};
+use actix_web_httpauth::extractors::basic::BasicAuth;
+use actix_web_httpauth::middleware::HttpAuthentication;
+use futures::{future, Future};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
@@ -14,11 +17,21 @@ use syntect::parsing::SyntaxSet;
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
+    // Realm is hardcoded for now. I will consider getting it from the config file.
+    let auth_config = web::Data::new(
+        actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
+    );
 
     HttpServer::new(move || {
+        let basic_auth = HttpAuthentication::basic(authenticate);
         App::new()
             .register_data(config.clone())
-            .service(new_paste)
+            .register_data(auth_config.clone())
+            .service(
+                web::resource("/")
+                    .route(web::post().to_async(new_paste))
+                    .wrap(basic_auth),
+            )
             .service(send_paste)
             .service(send_highlighted_paste)
     })
@@ -33,7 +46,8 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 pub struct Config {
     pub paste_dir: String,
     pub url_base: String,
-    // TODO: Fields for HTTP auth (user/pass)
+    pub username: String,
+    pub password: String,
 }
 
 impl Config {
@@ -42,9 +56,13 @@ impl Config {
         // TODO: Parse command line arguments
         let paste_dir = String::from("./pastes");
         let url_base = String::from("https://localhost");
+        let username = String::from("tansly");
+        let password = String::from("hebele");
         Ok(Config {
             paste_dir,
             url_base,
+            username,
+            password,
         })
     }
 }
@@ -57,7 +75,6 @@ struct Paste {
 // TODO: Consider using multipart formdata instead of urlencoded.
 // XXX: This will hang in an infinite loop if the paste directory does not exist.
 // We'll probably make sure it exists while parsing config, not here.
-#[post("/")]
 fn new_paste(
     config: web::Data<Config>,
     paste: web::Form<Paste>,
@@ -150,10 +167,36 @@ fn send_highlighted_paste(
     })
 }
 
+fn authenticate(
+    req: ServiceRequest,
+    credentials: BasicAuth,
+) -> impl Future<Item = ServiceRequest, Error = actix_web::Error> {
+    use actix_web_httpauth::extractors;
+    // I wish I could chain these if let bindings.
+    // https://github.com/rust-lang/rust/issues/53667 :(
+    if let Some(config) = req.app_data::<Config>() {
+        if let Some(password) = credentials.password() {
+            let username = credentials.user_id();
+            // By the way, plaintext password :))))
+            if username == &config.username && password == &config.password {
+                return future::ok(req);
+            }
+        }
+    }
+    // Fail safe by erroring if app configuration could not be acquired.
+    let auth_config = req
+        .app_data::<extractors::basic::Config>()
+        .map_or_else(extractors::basic::Config::default, |data| {
+            data.get_ref().clone()
+        });
+    future::err(extractors::AuthenticationError::from(auth_config).into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use actix_web::{http, test};
+    use base64;
     use std::fs::File;
     use std::io::Write;
     use std::str;
@@ -163,6 +206,8 @@ mod tests {
         Config {
             paste_dir: String::from(paste_dir),
             url_base: String::from("https://testurl"),
+            username: String::from("tansly"),
+            password: String::from("hebele"),
         }
     }
 
@@ -212,7 +257,11 @@ mod tests {
         let config = make_test_config(test_dir.path().to_str().unwrap());
 
         let data = web::Data::new(config.clone());
-        let mut app = test::init_service(App::new().register_data(data).service(new_paste));
+        let mut app = test::init_service(
+            App::new()
+                .register_data(data)
+                .route("/", web::post().to_async(new_paste)),
+        );
 
         // XXX: This is not urlencoded, but it seems to work. Why?
         let paste_content = "hebele hubele\nbubele mubele\n";
@@ -234,5 +283,120 @@ mod tests {
         // Line above gets the paste id with a preceding slash, which is required for the next line to work.
         let file_content = fs::read_to_string(config.paste_dir + paste_id).unwrap();
         assert_eq!(paste_content, file_content);
+    }
+
+    #[test]
+    fn auth_valid_creds() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + ":" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        let resp = test::call_service(&mut app, req);
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_user_password() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + "wrong_user:wrong_password" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_user() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + "wrong_user:" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_password() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + ":wrong_password" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_no_header() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let req = test::TestRequest::post().to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
     }
 }
