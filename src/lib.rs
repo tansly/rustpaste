@@ -238,7 +238,55 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn auth_invalid_creds() {
+    fn auth_invalid_user_password() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + "wrong_user:wrong_password" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_user() {
+        let config = make_test_config("unused path");
+        let data = web::Data::new(config.clone());
+        let basic_auth = HttpAuthentication::basic(authenticate);
+        let mut app = test::init_service(
+            App::new().register_data(data).service(
+                web::resource("/")
+                    .route(web::post().to(|| HttpResponse::Ok()))
+                    .wrap(basic_auth),
+            ),
+        );
+
+        let creds = config.username + "wrong_user:" + &config.password;
+        let creds = base64::encode(&creds);
+        let req = test::TestRequest::post()
+            .header("Authorization", format!("Basic {}", creds))
+            .to_request();
+        // test::call_service() panics if the result is an error, if I understood correctly.
+        // I'd like to get a response and check the status code, but well.
+        test::call_service(&mut app, req);
+    }
+
+    #[test]
+    #[should_panic]
+    fn auth_invalid_password() {
         let config = make_test_config("unused path");
         let data = web::Data::new(config.clone());
         let basic_auth = HttpAuthentication::basic(authenticate);
