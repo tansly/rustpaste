@@ -11,6 +11,9 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::iter;
+use syntect::highlighting::{Color, ThemeSet};
+use syntect::html::highlighted_html_for_string;
+use syntect::parsing::SyntaxSet;
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
@@ -30,6 +33,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
                     .wrap(basic_auth),
             )
             .service(send_paste)
+            .service(send_highlighted_paste)
     })
     .bind("127.0.0.1:8080")
     .unwrap()
@@ -103,7 +107,7 @@ fn new_paste(
     })
 }
 
-#[get("/{filename}")]
+#[get("/{paste_id}")]
 fn send_paste(
     config: web::Data<Config>,
     paste_id: web::Path<String>,
@@ -114,6 +118,51 @@ fn send_paste(
     })
     .then(|res| match res {
         Ok(contents) => Ok(HttpResponse::Ok().content_type("text/plain").body(contents)),
+        Err(_) => Ok(HttpResponse::NotFound().into()),
+    })
+}
+
+#[get("/{paste_id}/{file_extension}")]
+fn send_highlighted_paste(
+    config: web::Data<Config>,
+    paste_info: web::Path<(String, String)>,
+) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
+    web::block(move || {
+        let (ref paste_id, ref file_extension) = *paste_info;
+
+        let ss = SyntaxSet::load_defaults_newlines();
+        let ts = ThemeSet::load_defaults();
+
+        let style = "
+            pre {
+                font-size:13px;
+                font-family: Consolas, \"Liberation Mono\", Menlo, Courier, monospace;
+            }";
+        let mut body = format!(
+            "<head><title>{}</title><style>{}</style></head>",
+            paste_id, style
+        );
+
+        let theme = &ts.themes["base16-ocean.dark"];
+        let color = theme.settings.background.unwrap_or(Color::WHITE);
+        body.push_str(&format!(
+            "<body style=\"background-color:#{:02x}{:02x}{:02x};\">\n",
+            color.r, color.g, color.b
+        ));
+
+        let file_path = format!("{}/{}", config.paste_dir, paste_id);
+        fs::read_to_string(file_path).and_then(|contents| {
+            match ss.find_syntax_by_extension(file_extension) {
+                Some(syntax) => {
+                    let highlighted = highlighted_html_for_string(&contents, &ss, syntax, theme);
+                    Ok(body + &highlighted + "</body>")
+                }
+                None => Ok(contents),
+            }
+        })
+    })
+    .then(|res| match res {
+        Ok(contents) => Ok(HttpResponse::Ok().content_type("text/html").body(contents)),
         Err(_) => Ok(HttpResponse::NotFound().into()),
     })
 }
