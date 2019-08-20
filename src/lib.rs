@@ -14,7 +14,7 @@ use std::iter;
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
-    // I may opt to the realm from the config file in the future.
+    // Realm is hardcoded for now. I will consider getting it from the config file.
     let auth_config = web::Data::new(
         actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
     );
