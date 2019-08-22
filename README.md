@@ -9,18 +9,20 @@ This is a work in progress.
 
 ## REST API
 * To upload a paste, send a `POST` request to `/` with `application/x-www-form-urlencoded` data.
-**This requires authentication (HTTP basic authentication).** If the request is successful, response contains the URL of the paste.  
-Note that urlencoded data is not the best approach for this because of some limitations
-(for example the max file size imposed by actix-web, extra overhead for non-ASCII data).
-**I'm planning to change this to use `multipart/form-data`.** Dealing with urlencoded
-data is so much easier in actix-web; that's why I chose to do it this way initially.  
-You can use `curl` as follows to upload the contents of a file named `filename`:
-```
-curl <domain> --basic -u "user:pass" --data-urlencode "data@filename"
-```
-You should definitely use HTTPS or you'll get owned.
-Since `rustpaste` does not have SSL support,
-put it behind some reverse proxy (such as nginx) with SSL support.
+**This requires authentication (HTTP basic authentication).** If the request is successful, response contains the URL of the paste.
+
+    Note that urlencoded data is not the best approach for this because of some limitations
+    (for example the max file size imposed by actix-web, extra overhead for non-ASCII data).
+    **I'm planning to change this to use `multipart/form-data`.** Dealing with urlencoded
+    data is so much easier in actix-web; that's why I chose to do it this way initially.
+
+    You can use `curl` as follows to upload the contents of a file named `filename`:
+    ```
+    curl <domain> --basic -u "user:pass" --data-urlencode "data@filename"
+    ```
+    You should definitely use HTTPS or you'll get owned.
+    Since `rustpaste` does not have SSL support,
+    put it behind some reverse proxy (such as nginx) with SSL support.
 
 * To get a paste, send a `GET` request to the URL returned by the `POST`.
 To get the paste with syntax highlighting, add the file extension for the file
