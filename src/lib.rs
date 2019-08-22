@@ -30,6 +30,11 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             .service(
                 web::resource("/")
                     .route(web::post().to_async(new_paste))
+                    .wrap(basic_auth.clone()),
+            )
+            .service(
+                web::resource("/{paste_id}")
+                    .route(web::delete().to_async(delete_paste))
                     .wrap(basic_auth),
             )
             .service(send_paste)
@@ -104,6 +109,20 @@ fn new_paste(
             .content_type("text/plain")
             .body(paste_url)),
         Err(_) => Ok(HttpResponse::InternalServerError().into()),
+    })
+}
+
+fn delete_paste(
+    config: web::Data<Config>,
+    paste_id: web::Path<String>,
+) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
+    web::block(move || {
+        let file_path = format!("{}/{}", config.paste_dir, paste_id);
+        fs::remove_file(file_path)
+    })
+    .then(|res| match res {
+        Ok(_) => Ok(HttpResponse::Ok().body("")),
+        Err(_) => Ok(HttpResponse::NotFound().into()),
     })
 }
 
