@@ -1,3 +1,4 @@
+use actix_multipart::Multipart;
 use actix_web::dev::ServiceRequest;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use actix_web_httpauth::extractors::basic::BasicAuth;
@@ -21,10 +22,12 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let auth_config = web::Data::new(
         actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
     );
+    let form = form_data::Form::new().field("paste", form_data::Field::text());
 
     HttpServer::new(move || {
         let basic_auth = HttpAuthentication::basic(authenticate);
         App::new()
+            .data(form.clone())
             .register_data(config.clone())
             .register_data(auth_config.clone())
             .service(
@@ -67,19 +70,19 @@ impl Config {
     }
 }
 
-#[derive(Deserialize)]
-struct Paste {
-    pub data: String,
-}
-
-// TODO: Consider using multipart formdata instead of urlencoded.
 // XXX: This will hang in an infinite loop if the paste directory does not exist.
 // We'll probably make sure it exists while parsing config, not here.
 fn new_paste(
     config: web::Data<Config>,
-    paste: web::Form<Paste>,
-) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
-    web::block(move || {
+    (mp, form): (Multipart, web::Data<form_data::Form>),
+) -> impl Future<Item = HttpResponse, Error = form_data::Error> {
+    form_data::handle_multipart(mp, form.get_ref().clone()).map(move |form_value| {
+        // XXX: Can we safely unwrap form_value, thus avoiding this check?
+        let paste = match form_value.text() {
+            Some(paste) => paste,
+            None => return HttpResponse::InternalServerError().into(),
+        };
+
         let mut rng = thread_rng();
 
         // Paste IDs (= paste file names) are 8 character alphanumeric strings.
@@ -97,14 +100,14 @@ fn new_paste(
         };
 
         let paste_url = format!("{}/{}", config.url_base, paste_id);
-        file.write_all(paste.data.as_bytes()).and(Ok(paste_url))
-    })
-    .then(|res| match res {
-        Ok(paste_url) => Ok(HttpResponse::Created()
-            .set_header("Location", paste_url.clone())
-            .content_type("text/plain")
-            .body(paste_url)),
-        Err(_) => Ok(HttpResponse::InternalServerError().into()),
+
+        match file.write_all(paste.as_bytes()) {
+            Ok(_) => HttpResponse::Created()
+                .set_header("Location", paste_url.clone())
+                .content_type("text/plain")
+                .body(paste_url),
+            Err(_) => HttpResponse::InternalServerError().into(),
+        }
     })
 }
 
