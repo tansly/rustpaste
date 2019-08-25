@@ -100,7 +100,8 @@ fn new_paste(
         file.write_all(paste.data.as_bytes()).and(Ok(paste_url))
     })
     .then(|res| match res {
-        Ok(paste_url) => Ok(HttpResponse::Ok()
+        Ok(paste_url) => Ok(HttpResponse::Created()
+            .set_header("Location", paste_url.clone())
             .content_type("text/plain")
             .body(paste_url)),
         Err(_) => Ok(HttpResponse::InternalServerError().into()),
@@ -272,17 +273,21 @@ mod tests {
             .to_request();
         let resp = test::call_service(&mut app, req);
 
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+        assert_eq!(resp.status(), http::StatusCode::CREATED);
 
-        let resp_body = test::read_body(resp);
-        let paste_url = str::from_utf8(&resp_body).unwrap();
+        // Check the URL in Location header.
+        let paste_url = resp.headers().get("Location").unwrap().to_str().unwrap();
         assert!(paste_url.starts_with(&config.url_base));
 
         let (_, paste_id) = paste_url.split_at(config.url_base.len());
         // Line above gets the paste id with a preceding slash, which is required for the next line to work.
         let file_content = fs::read_to_string(config.paste_dir + paste_id).unwrap();
         assert_eq!(paste_content, file_content);
+
+        // Check the URL in the body.
+        let resp_body = test::read_body(resp);
+        let paste_url = str::from_utf8(&resp_body).unwrap();
+        assert!(paste_url.starts_with(&config.url_base));
     }
 
     #[test]
