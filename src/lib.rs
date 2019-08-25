@@ -77,10 +77,12 @@ fn new_paste(
     (mp, form): (Multipart, web::Data<form_data::Form>),
 ) -> impl Future<Item = HttpResponse, Error = form_data::Error> {
     form_data::handle_multipart(mp, form.get_ref().clone()).map(move |form_value| {
-        // XXX: Can we safely unwrap form_value, thus avoiding this check?
-        let paste = match form_value.text() {
-            Some(paste) => paste,
-            None => return HttpResponse::InternalServerError().into(),
+        let paste = match form_value {
+            form_data::Value::Map(mut form_map) => match form_map.remove("paste") {
+                Some(paste) => paste.text().unwrap(),
+                None => return HttpResponse::InternalServerError().into(),
+            },
+            _ => return HttpResponse::InternalServerError().into(),
         };
 
         let mut rng = thread_rng();
