@@ -6,7 +6,6 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use futures::{future, Future};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde::Deserialize;
 use std::error::Error;
 use std::fs;
 use std::fs::OpenOptions;
@@ -78,11 +77,8 @@ fn new_paste(
 ) -> impl Future<Item = HttpResponse, Error = form_data::Error> {
     form_data::handle_multipart(mp, form.get_ref().clone()).map(move |form_value| {
         let paste = match form_value {
-            form_data::Value::Map(mut form_map) => match form_map.remove("paste") {
-                Some(paste) => paste.text().unwrap(),
-                None => return HttpResponse::InternalServerError().into(),
-            },
-            _ => return HttpResponse::InternalServerError().into(),
+            form_data::Value::Map(mut form_map) => form_map.remove("paste")?.text()?,
+            _ => return None,
         };
 
         let mut rng = thread_rng();
@@ -101,15 +97,18 @@ fn new_paste(
             }
         };
 
-        let paste_url = format!("{}/{}", config.url_base, paste_id);
+        file.write_all(paste.as_bytes()).ok()?;
 
-        match file.write_all(paste.as_bytes()) {
-            Ok(_) => HttpResponse::Created()
-                .set_header("Location", paste_url.clone())
-                .content_type("text/plain")
-                .body(paste_url),
-            Err(_) => HttpResponse::InternalServerError().into(),
-        }
+        let paste_url = format!("{}/{}", config.url_base, paste_id);
+        Some(HttpResponse::Created()
+            .set_header("Location", paste_url.clone())
+            .content_type("text/plain")
+            .body(paste_url))
+    })
+    .map(|res| match res {
+        Some(response) => response,
+        // TODO: Add info to error response.
+        None => HttpResponse::InternalServerError().finish(),
     })
 }
 
