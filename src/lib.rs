@@ -23,7 +23,9 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let auth_config = web::Data::new(
         actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
     );
-    let form = form_data::Form::new().field("paste", form_data::Field::text()).max_field_size(MAX_PASTE_SIZE);
+    let form = form_data::Form::new()
+        .field("paste", form_data::Field::text())
+        .max_field_size(MAX_PASTE_SIZE);
 
     HttpServer::new(move || {
         let basic_auth = HttpAuthentication::basic(authenticate);
@@ -77,41 +79,44 @@ fn new_paste(
     config: web::Data<Config>,
     (mp, form): (Multipart, web::Data<form_data::Form>),
 ) -> impl Future<Item = HttpResponse, Error = form_data::Error> {
-    form_data::handle_multipart(mp, form.get_ref().clone()).map(move |form_value| {
-        let paste = match form_value {
-            form_data::Value::Map(mut form_map) => form_map.remove("paste")?.text()?,
-            _ => return None,
-        };
+    form_data::handle_multipart(mp, form.get_ref().clone())
+        .map(move |form_value| {
+            let paste = match form_value {
+                form_data::Value::Map(mut form_map) => form_map.remove("paste")?.text()?,
+                _ => return None,
+            };
 
-        let mut rng = thread_rng();
+            let mut rng = thread_rng();
 
-        // Paste IDs (= paste file names) are 8 character alphanumeric strings.
-        // Here we generate a random ID that is not already in use,
-        // and create (and open) a paste file with that ID as its name.
-        let (mut file, paste_id) = loop {
-            let id: String = iter::repeat(())
-                .map(|()| rng.sample(Alphanumeric))
-                .take(8)
-                .collect();
-            let full_path = format!("{}/{}", config.paste_dir, id);
-            if let Ok(file) = OpenOptions::new().write(true).create(true).open(full_path) {
-                break (file, id);
-            }
-        };
+            // Paste IDs (= paste file names) are 8 character alphanumeric strings.
+            // Here we generate a random ID that is not already in use,
+            // and create (and open) a paste file with that ID as its name.
+            let (mut file, paste_id) = loop {
+                let id: String = iter::repeat(())
+                    .map(|()| rng.sample(Alphanumeric))
+                    .take(8)
+                    .collect();
+                let full_path = format!("{}/{}", config.paste_dir, id);
+                if let Ok(file) = OpenOptions::new().write(true).create(true).open(full_path) {
+                    break (file, id);
+                }
+            };
 
-        file.write_all(paste.as_bytes()).ok()?;
+            file.write_all(paste.as_bytes()).ok()?;
 
-        let paste_url = format!("{}/{}", config.url_base, paste_id);
-        Some(HttpResponse::Created()
-            .set_header("Location", paste_url.clone())
-            .content_type("text/plain")
-            .body(paste_url))
-    })
-    .map(|res| match res {
-        Some(response) => response,
-        // TODO: Add info to error response.
-        None => HttpResponse::InternalServerError().finish(),
-    })
+            let paste_url = format!("{}/{}", config.url_base, paste_id);
+            Some(
+                HttpResponse::Created()
+                    .set_header("Location", paste_url.clone())
+                    .content_type("text/plain")
+                    .body(paste_url),
+            )
+        })
+        .map(|res| match res {
+            Some(response) => response,
+            // TODO: Add info to error response.
+            None => HttpResponse::InternalServerError().finish(),
+        })
 }
 
 #[get("/{paste_id}")]
@@ -274,15 +279,24 @@ mod tests {
         // XXX: Gotta be another way...
         // ...but I think I cannot simply set headers by using the API
         let paste_boundary = "------------------------020e0f16f7f8376c";
-        let paste_headers =
-            "\nContent-Disposition: form-data; name=\"paste\"; filename=\"tits\"\n\
-            Content-Type: application/octet-stream\n\n";
+        let paste_headers = "\nContent-Disposition: form-data; name=\"paste\"; filename=\"tits\"\n\
+                             Content-Type: application/octet-stream\n\n";
         let paste_content = "🎵 When it's in my face\nI feel all my love and hate 🎵\n\n";
-        let paste_payload = [paste_boundary, paste_headers, paste_content, paste_boundary, "--"].join("");
+        let paste_payload = [
+            paste_boundary,
+            paste_headers,
+            paste_content,
+            paste_boundary,
+            "--",
+        ]
+        .join("");
         println!("{}", paste_payload);
 
         let req = test::TestRequest::post()
-            .header("content-type", format!("multipart/form-data; boundary={}", paste_boundary))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={}", paste_boundary),
+            )
             .header("content-length", "256")
             .header("accept", "*/*")
             .set_payload(paste_payload)
