@@ -10,7 +10,7 @@ license = "MIT"
 [dependencies]
 actix-web = "1.0.7"
 serde = "1.0.99"
-futures = "0.1.28"
+futures = "0.1.29"
 rand = "0.7.2"
 actix-web-httpauth = "0.3.2"
 syntect = "3.3.0"
