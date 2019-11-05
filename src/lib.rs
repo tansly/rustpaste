@@ -15,13 +15,15 @@ use syntect::highlighting::{Color, ThemeSet};
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
 
+const MAX_PASTE_SIZE: usize = 1_000_000;
+
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
     // Realm is hardcoded for now. I will consider getting it from the config file.
     let auth_config = web::Data::new(
         actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
     );
-    let form = form_data::Form::new().field("paste", form_data::Field::text());
+    let form = form_data::Form::new().field("paste", form_data::Field::text()).max_field_size(MAX_PASTE_SIZE);
 
     HttpServer::new(move || {
         let basic_auth = HttpAuthentication::basic(authenticate);
