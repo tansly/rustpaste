@@ -270,13 +270,23 @@ mod tests {
                 .route("/", web::post().to_async(new_paste)),
         );
 
-        // XXX: This is not urlencoded, but it seems to work. Why?
-        let paste_content = "hebele hubele\nbubele mubele\n";
+        // XXX: Gotta be another way...
+        // ...but I think I cannot simply set headers by using the API
+        let paste_boundary = "------------------------020e0f16f7f8376c";
+        let paste_headers =
+            "\nContent-Disposition: form-data; name=\"paste\"; filename=\"tits\"\n\
+            Content-Type: application/octet-stream\n\n";
+        let paste_content = "🎵 When it's in my face\nI feel all my love and hate 🎵\n\n";
+        let paste_payload = [paste_boundary, paste_headers, paste_content, paste_boundary, "--"].join("");
+        println!("{}", paste_payload);
 
         let req = test::TestRequest::post()
-            .header("content-type", "application/x-www-form-urlencoded")
-            .set_payload(format!("data={}", paste_content))
+            .header("content-type", format!("multipart/form-data; boundary={}", paste_boundary))
+            .header("content-length", "256")
+            .header("accept", "*/*")
+            .set_payload(paste_payload)
             .to_request();
+        println!("{:?}", req);
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::CREATED);
