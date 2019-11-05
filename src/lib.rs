@@ -259,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn post_paste_short_text() {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
