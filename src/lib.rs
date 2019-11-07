@@ -305,6 +305,35 @@ mod tests {
     }
 
     #[test]
+    fn delete_paste_file() {
+        let test_dir = TempDir::new().unwrap();
+        let config = make_test_config(test_dir.path().to_str().unwrap());
+
+        let data = web::Data::new(config.clone());
+        let mut app = test::init_service(
+            App::new()
+                .register_data(data)
+                .route("/{paste_id}", web::delete().to_async(delete_paste)),
+        );
+
+        let paste_id = "/testpaste";
+        let paste_path = config.paste_dir + paste_id;
+        {
+            let paste_content = b"nonsense";
+            let mut file = File::create(&paste_path).unwrap();
+            file.write_all(paste_content).unwrap();
+        }
+
+        let req = test::TestRequest::delete().uri(paste_id).to_request();
+        let resp = test::call_service(&mut app, req);
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert!(
+            File::open(paste_path).is_err(),
+            "Deleted paste file should not exist"
+        );
+    }
+
+    #[test]
     fn auth_valid_creds() {
         let config = make_test_config("unused path");
         let data = web::Data::new(config.clone());
