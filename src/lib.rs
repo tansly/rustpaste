@@ -1,3 +1,4 @@
+use actix_multipart::Multipart;
 use actix_web::dev::ServiceRequest;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use actix_web_httpauth::extractors::basic::BasicAuth;
@@ -5,7 +6,6 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use futures::{future, Future};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde::Deserialize;
 use std::error::Error;
 use std::fs;
 use std::fs::OpenOptions;
@@ -15,16 +15,22 @@ use syntect::highlighting::{Color, ThemeSet};
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
 
+const MAX_PASTE_SIZE: usize = 1_000_000;
+
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = web::Data::new(config);
     // Realm is hardcoded for now. I will consider getting it from the config file.
     let auth_config = web::Data::new(
         actix_web_httpauth::extractors::basic::Config::default().realm("rustpaste pastebin"),
     );
+    let form = form_data::Form::new()
+        .field("paste", form_data::Field::text())
+        .max_field_size(MAX_PASTE_SIZE);
 
     HttpServer::new(move || {
         let basic_auth = HttpAuthentication::basic(authenticate);
         App::new()
+            .data(form.clone())
             .register_data(config.clone())
             .register_data(auth_config.clone())
             .service(
@@ -67,45 +73,50 @@ impl Config {
     }
 }
 
-#[derive(Deserialize)]
-struct Paste {
-    pub data: String,
-}
-
-// TODO: Consider using multipart formdata instead of urlencoded.
 // XXX: This will hang in an infinite loop if the paste directory does not exist.
 // We'll probably make sure it exists while parsing config, not here.
 fn new_paste(
     config: web::Data<Config>,
-    paste: web::Form<Paste>,
-) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
-    web::block(move || {
-        let mut rng = thread_rng();
+    (mp, form): (Multipart, web::Data<form_data::Form>),
+) -> impl Future<Item = HttpResponse, Error = form_data::Error> {
+    form_data::handle_multipart(mp, form.get_ref().clone())
+        .map(move |form_value| {
+            let paste = match form_value {
+                form_data::Value::Map(mut form_map) => form_map.remove("paste")?.text()?,
+                _ => return None,
+            };
 
-        // Paste IDs (= paste file names) are 8 character alphanumeric strings.
-        // Here we generate a random ID that is not already in use,
-        // and create (and open) a paste file with that ID as its name.
-        let (mut file, paste_id) = loop {
-            let id: String = iter::repeat(())
-                .map(|()| rng.sample(Alphanumeric))
-                .take(8)
-                .collect();
-            let full_path = format!("{}/{}", config.paste_dir, id);
-            if let Ok(file) = OpenOptions::new().write(true).create(true).open(full_path) {
-                break (file, id);
-            }
-        };
+            let mut rng = thread_rng();
 
-        let paste_url = format!("{}/{}", config.url_base, paste_id);
-        file.write_all(paste.data.as_bytes()).and(Ok(paste_url))
-    })
-    .then(|res| match res {
-        Ok(paste_url) => Ok(HttpResponse::Created()
-            .set_header("Location", paste_url.clone())
-            .content_type("text/plain")
-            .body(paste_url)),
-        Err(_) => Ok(HttpResponse::InternalServerError().into()),
-    })
+            // Paste IDs (= paste file names) are 8 character alphanumeric strings.
+            // Here we generate a random ID that is not already in use,
+            // and create (and open) a paste file with that ID as its name.
+            let (mut file, paste_id) = loop {
+                let id: String = iter::repeat(())
+                    .map(|()| rng.sample(Alphanumeric))
+                    .take(8)
+                    .collect();
+                let full_path = format!("{}/{}", config.paste_dir, id);
+                if let Ok(file) = OpenOptions::new().write(true).create(true).open(full_path) {
+                    break (file, id);
+                }
+            };
+
+            file.write_all(paste.as_bytes()).ok()?;
+
+            let paste_url = format!("{}/{}", config.url_base, paste_id);
+            Some(
+                HttpResponse::Created()
+                    .set_header("Location", paste_url.clone())
+                    .content_type("text/plain")
+                    .body(paste_url),
+            )
+        })
+        .map(|res| match res {
+            Some(response) => response,
+            // TODO: Add info to error response.
+            None => HttpResponse::InternalServerError().finish(),
+        })
 }
 
 #[get("/{paste_id}")]
@@ -253,6 +264,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn post_paste_short_text() {
         let test_dir = TempDir::new().unwrap();
         let config = make_test_config(test_dir.path().to_str().unwrap());
@@ -264,13 +276,32 @@ mod tests {
                 .route("/", web::post().to_async(new_paste)),
         );
 
-        // XXX: This is not urlencoded, but it seems to work. Why?
-        let paste_content = "hebele hubele\nbubele mubele\n";
+        // XXX: Gotta be another way...
+        // ...but I think I cannot simply set headers by using the API
+        let paste_boundary = "------------------------020e0f16f7f8376c";
+        let paste_headers = "\nContent-Disposition: form-data; name=\"paste\"; filename=\"tits\"\n\
+                             Content-Type: application/octet-stream\n\n";
+        let paste_content = "🎵 When it's in my face\nI feel all my love and hate 🎵\n\n";
+        let paste_payload = [
+            paste_boundary,
+            paste_headers,
+            paste_content,
+            paste_boundary,
+            "--",
+        ]
+        .join("");
+        println!("{}", paste_payload);
 
         let req = test::TestRequest::post()
-            .header("content-type", "application/x-www-form-urlencoded")
-            .set_payload(format!("data={}", paste_content))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={}", paste_boundary),
+            )
+            .header("content-length", "256")
+            .header("accept", "*/*")
+            .set_payload(paste_payload)
             .to_request();
+        println!("{:?}", req);
         let resp = test::call_service(&mut app, req);
 
         assert_eq!(resp.status(), http::StatusCode::CREATED);
