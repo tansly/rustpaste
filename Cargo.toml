@@ -11,7 +11,7 @@ license = "MIT"
 actix-web = "1.0.8"
 serde = "1.0.104"
 futures = "0.1.29"
-rand = "0.7.3"
+rand = "0.8.3"
 actix-web-httpauth = "0.3.2"
 syntect = "3.3.0"
 
