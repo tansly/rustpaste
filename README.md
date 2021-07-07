@@ -40,5 +40,4 @@ base URL to prepend to the `POST` responses will be configured using a config fi
 After implementing a very basic API with `GET` and `POST` requests, I'm planning to add the following features.
 - [x] HTTP basic authentication for posting/deleting pastes.
 - [x] Syntax highlighting with [syntect](https://github.com/trishume/syntect).
-- [ ] `DELETE` method to delete pastes.
 - [ ] Configuration via a config file.

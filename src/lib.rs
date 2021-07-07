@@ -30,6 +30,11 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             .service(
                 web::resource("/")
                     .route(web::post().to_async(new_paste))
+                    .wrap(basic_auth.clone()),
+            )
+            .service(
+                web::resource("/{paste_id}")
+                    .route(web::delete().to_async(delete_paste))
                     .wrap(basic_auth),
             )
             .service(send_paste)
@@ -105,6 +110,20 @@ fn new_paste(
             .content_type("text/plain")
             .body(paste_url)),
         Err(_) => Ok(HttpResponse::InternalServerError().into()),
+    })
+}
+
+fn delete_paste(
+    config: web::Data<Config>,
+    paste_id: web::Path<String>,
+) -> impl Future<Item = HttpResponse, Error = actix_web::Error> {
+    web::block(move || {
+        let file_path = format!("{}/{}", config.paste_dir, paste_id);
+        fs::remove_file(file_path)
+    })
+    .then(|res| match res {
+        Ok(_) => Ok(HttpResponse::Ok().body("")),
+        Err(_) => Ok(HttpResponse::NotFound().into()),
     })
 }
 
@@ -288,6 +307,35 @@ mod tests {
         let resp_body = test::read_body(resp);
         let paste_url = str::from_utf8(&resp_body).unwrap();
         assert!(paste_url.starts_with(&config.url_base));
+    }
+
+    #[test]
+    fn delete_paste_file() {
+        let test_dir = TempDir::new().unwrap();
+        let config = make_test_config(test_dir.path().to_str().unwrap());
+
+        let data = web::Data::new(config.clone());
+        let mut app = test::init_service(
+            App::new()
+                .register_data(data)
+                .route("/{paste_id}", web::delete().to_async(delete_paste)),
+        );
+
+        let paste_id = "/testpaste";
+        let paste_path = config.paste_dir + paste_id;
+        {
+            let paste_content = b"nonsense";
+            let mut file = File::create(&paste_path).unwrap();
+            file.write_all(paste_content).unwrap();
+        }
+
+        let req = test::TestRequest::delete().uri(paste_id).to_request();
+        let resp = test::call_service(&mut app, req);
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert!(
+            File::open(paste_path).is_err(),
+            "Deleted paste file should not exist"
+        );
     }
 
     #[test]
